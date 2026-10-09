@@ -1,8 +1,37 @@
+branches:
+  defaultBase: main
+pr:
+  merge:
+    method: squash
 reviews:
   automated:
     enabled: true
+  routing:
+    rules:
+      - name: core-sync-and-github-clients
+        match:
+          - src/worker.ts
+          - src/github-agent-tools.ts
+          - src/github-repo.ts
+          - src/git-branch-publisher.ts
+        mode: specialized
+        reviewers:
+          - type: general
+      - name: dependency-surface
+        match:
+          - package.json
+          - pnpm-lock.yaml
+        mode: specialized
+        reviewers:
+          - type: general
+      - name: catch-all
+        match:
+          - "**"
+        mode: single
 qa:
   guidePaths:
     - docs/qa.md
   automationPaths:
     - .github/workflows/ci.yml
+triageProjects:
+  reviewProjectId: prj_ExFsGczg
