@@ -11,14 +11,35 @@ This repo contains a single Paperclip plugin package for GitHub synchronization 
 ```text
 .
 ├── .github/workflows/
+│   ├── ci.yml
+│   └── release.yml
 ├── scripts/
+│   ├── build.mjs
 │   └── e2e/
+│       ├── manual-paperclip-verify.mjs
+│       └── run-paperclip-smoke.mjs
 ├── src/
+│   ├── git-branch-publisher.ts
+│   ├── github-agent-tools.ts
+│   ├── github-repo.ts
+│   ├── issue-interactions.ts
+│   ├── kpi-contract.ts
 │   ├── manifest.ts
+│   ├── paperclip-health.ts
 │   ├── worker.ts
 │   └── ui/
-│       └── index.tsx
+│       ├── assignees.ts
+│       ├── host-secrets.ts
+│       ├── http.ts
+│       ├── index.tsx
+│       ├── plugin-config.ts
+│       ├── plugin-installation.ts
+│       └── project-bindings.ts
 ├── tests/
+│   ├── build-script.spec.mjs
+│   ├── git-branch-publisher.spec.ts
+│   ├── issue-interactions-integration.spec.ts
+│   ├── issue-interactions.spec.ts
 │   └── plugin.spec.ts
 ├── SPEC.md
 ├── README.md

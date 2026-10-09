@@ -1,9 +1,9 @@
 # paperclip-github-plugin
 
 [![npm version](https://img.shields.io/npm/v/paperclip-github-plugin)](https://www.npmjs.com/package/paperclip-github-plugin)
-[![CI](https://img.shields.io/github/actions/workflow/status/alvarosanchez/paperclip-github-plugin/ci.yml?branch=main&label=CI)](https://github.com/alvarosanchez/paperclip-github-plugin/actions/workflows/ci.yml)
-[![Node >=24.11](https://img.shields.io/badge/node-%3E%3D24.11-339933?logo=node.js&logoColor=white)](https://www.npmjs.com/package/paperclip-github-plugin)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/alvarosanchez/paperclip-github-plugin/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/dbhagen/paperclip-github-plugin/ci.yml?branch=main&label=CI)](https://github.com/dbhagen/paperclip-github-plugin/actions/workflows/ci.yml)
+[![Node >=24.21](https://img.shields.io/badge/node-%3E%3D24.21-339933?logo=node.js&logoColor=white)](https://www.npmjs.com/package/paperclip-github-plugin)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/dbhagen/paperclip-github-plugin/blob/main/LICENSE)
 
 GitHub Sync is a Paperclip plugin for teams that plan in Paperclip but still receive work through GitHub issues.
 
@@ -128,7 +128,7 @@ Coverage is dimensioned rather than reported as one misleading complete flag: th
 
 ## Requirements
 
-- Node.js 24.11+ (the `@paperclipai/plugin-sdk` 2026.831 line requires it)
+- Node.js 24.21+ (matching the `engines` field in `package.json`; the `@paperclipai/plugin-sdk` 2026.831 line requires it)
 - a Paperclip host with plugin installation enabled. GitHub Sync is built and tested against Paperclip `2026.831.1`; the manifest relies on explicit capabilities instead of a strict host-version gate because current latest/development hosts can report `0.0.0` during plugin upgrade.
 - a GitHub token with API access to the repositories you want to sync
 
