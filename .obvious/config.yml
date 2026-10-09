@@ -1,0 +1,8 @@
+reviews:
+  automated:
+    enabled: true
+qa:
+  guidePaths:
+    - docs/qa.md
+  automationPaths:
+    - .github/workflows/ci.yml
