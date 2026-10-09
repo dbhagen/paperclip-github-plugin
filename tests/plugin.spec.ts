@@ -22990,14 +22990,16 @@ test('sync.runNow converges local drift, quiesces stable state, and re-wakes for
     assert.match(registryAfterFirstAction[0]?.remoteActionFingerprint ?? '', /^[a-f0-9]{64}$/);
 
     await acknowledgeAndReset();
-    await syncAndExpectWake();
+    const preservedReblock = await harness.performAction('sync.runNow', {}) as { syncState: { status: string } };
+    assert.equal(preservedReblock.syncState.status, 'success');
+    assert.equal((await harness.ctx.issues.get(issue.id, 'company-1'))?.status, 'blocked');
+    assert.equal(transitionComments.length, 0);
+    assert.equal(statusMutations.length, 0);
+    assert.equal(wakeRequests.length, 0);
 
-    transitionComments.length = 0;
-    statusMutations.length = 0;
-    wakeRequests.length = 0;
     const stableRetry = await harness.performAction('sync.runNow', {}) as { syncState: { status: string } };
     assert.equal(stableRetry.syncState.status, 'success');
-    assert.equal((await harness.ctx.issues.get(issue.id, 'company-1'))?.status, 'in_progress');
+    assert.equal((await harness.ctx.issues.get(issue.id, 'company-1'))?.status, 'blocked');
     assert.equal(transitionComments.length, 0);
     assert.equal(statusMutations.length, 0);
     assert.equal(wakeRequests.length, 0);
@@ -23044,6 +23046,7 @@ test('sync.runNow converges local drift, quiesces stable state, and re-wakes for
     assert.equal(statusMutations.length, 1);
     assert.equal(wakeRequests.length, 0);
     await acknowledgeAndReset();
+    headSha = 'd'.repeat(40);
 
     issueCommentAuthor = 'untrusted-outsider';
     issueCommentCount = 1;
@@ -23087,6 +23090,167 @@ test('sync.runNow converges local drift, quiesces stable state, and re-wakes for
     assert.equal(statusMutations.length, 0);
     assert.equal(transitionComments.length, 0);
     assert.equal(wakeRequests.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+test('sync.runNow preserves a deliberate re-block across sync runs while PR evidence is unchanged and resumes when the evidence changes', async () => {
+  // Behavior contract (see shouldPreserveDeliberateBlockedWait): once sync moves a blocked
+  // issue out of `blocked`, it may not do so again until the external pull-request state it
+  // reacted to actually changes. The recorded state must survive the registry reload that
+  // separates sync runs; a worker restart or the next sync.runNow reloads the import registry
+  // through normalizeImportRegistry, so the persisted record is the only carrier of that state.
+  const harness = createTestHarness({ manifest, config: { githubTokenRef: 'github-secret-ref' } });
+  await plugin.definition.setup(harness.ctx);
+  harness.seed({ agents: [createAgentFixture({
+    id: 'agent-remote-action', companyId: 'company-1', name: 'Remote Action Executor', title: 'Executor'
+  })] });
+  await harness.performAction('settings.saveRegistration', {
+    companyId: 'company-1',
+    mappings: [{
+      id: 'mapping-remote-action', repositoryUrl: 'paperclipai/example-repo',
+      paperclipProjectName: 'Engineering', paperclipProjectId: 'project-1', companyId: 'company-1'
+    }],
+    advancedSettings: {
+      executorAssigneeAgentId: 'agent-remote-action', defaultStatus: 'backlog', ignoredIssueAuthorUsernames: ['renovate']
+    },
+    syncState: { status: 'idle' }
+  });
+
+  const issue = await harness.ctx.issues.create({
+    companyId: 'company-1', projectId: 'project-1', title: 'Blocked on a durable conflict', status: 'blocked'
+  });
+  await harness.ctx.state.set(
+    { scopeKind: 'instance', stateKey: 'paperclip-github-plugin-import-registry' },
+    [{
+      mappingId: 'mapping-remote-action', githubIssueId: 6101, githubIssueNumber: 61,
+      paperclipIssueId: issue.id, importedAt: '2026-06-01T09:00:00.000Z', lastSeenCommentCount: 0,
+      lastSeenGitHubState: 'open', repositoryUrl: 'https://github.com/paperclipai/example-repo',
+      paperclipProjectId: 'project-1', companyId: 'company-1'
+    }]
+  );
+
+  // The linked pull request sits in a state sync cannot act on: conflicting merge, dirty
+  // merge state. This is the recurring-conflict shape that must not produce repeated
+  // blocked -> in progress wake cycles for unchanged evidence.
+  let headSha = 'a'.repeat(40);
+  const readRegistry = () => harness.getState({
+    scopeKind: 'instance', stateKey: 'paperclip-github-plugin-import-registry'
+  }) as Array<{ unblockedExternalStateHash?: string }>;
+
+  const transitionComments: string[] = [];
+  const statusMutations: Array<Record<string, unknown>> = [];
+  const wakeRequests: string[] = [];
+  const originalUpdate = harness.ctx.issues.update;
+  const originalRequestWakeup = harness.ctx.issues.requestWakeup;
+  const originalCreateComment = harness.ctx.issues.createComment;
+  harness.ctx.issues.createComment = async (issueId, body, companyId) => {
+    transitionComments.push(body);
+    return originalCreateComment(issueId, body, companyId);
+  };
+  harness.ctx.issues.update = async (issueId, patch, companyId) => {
+    if (issueId === issue.id && patch && typeof patch === 'object' && 'status' in patch) {
+      statusMutations.push(patch as Record<string, unknown>);
+    }
+    return originalUpdate(issueId, patch, companyId);
+  };
+  harness.ctx.issues.requestWakeup = async (issueId, companyId, options) => {
+    wakeRequests.push(issueId);
+    return originalRequestWakeup(issueId, companyId, options);
+  };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(getRequestUrl(input));
+    if (url.pathname === '/repos/paperclipai/example-repo/issues' && ['all', 'open'].includes(url.searchParams.get('state') ?? '')) {
+      return jsonResponse([{
+        id: 6101, number: 61, title: 'Blocked on a durable conflict', body: null,
+        html_url: 'https://github.com/paperclipai/example-repo/issues/61', state: 'open',
+        comments: 0, user: { login: 'trusted-author' }
+      }]);
+    }
+    if (url.pathname === '/repos/paperclipai/example-repo/issues/61/comments') {
+      return jsonResponse([]);
+    }
+    if (url.pathname === '/repos/paperclipai/example-repo/collaborators/trusted-author/permission') {
+      return jsonResponse({ permission: 'write', role_name: 'write' });
+    }
+    if (url.pathname === '/graphql') {
+      const { query } = getGraphqlRequest(init);
+      if (query.includes('query GitHubIssueParentRelationships')) {
+        return graphqlIssueParentRelationshipsResponse([{ issueNumber: 61 }]);
+      }
+      if (query.includes('query GitHubIssueStatusSnapshot')) {
+        return graphqlResponse({ repository: { issue: {
+          number: 61, state: 'OPEN', stateReason: null, comments: { totalCount: 0 },
+          closedByPullRequestsReferences: {
+            pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ number: 610, state: 'OPEN' }]
+          }
+        } } });
+      }
+      if (query.includes('query GitHubPullRequestReviewThreads')) {
+        return graphqlResponse({ repository: { pullRequest: { reviewThreads: {
+          pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ isResolved: true }]
+        } } } });
+      }
+      if (query.includes('query GitHubPullRequestCiContexts')) {
+        return graphqlResponse({ repository: { pullRequest: {
+          headRefOid: headSha, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY',
+          reviewDecision: 'REVIEW_REQUIRED',
+          statusCheckRollup: { contexts: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' }]
+          } }
+        } } });
+      }
+    }
+    throw new Error(`Unexpected GitHub request: ${url.toString()}`);
+  };
+
+  try {
+    // Pass 1: sync pulls the blocked issue into active work for the conflicting PR and
+    // records the external state it reacted to.
+    const firstPass = await harness.performAction('sync.runNow', {}) as { syncState: { status: string } };
+    assert.equal(firstPass.syncState.status, 'success');
+    assert.equal((await harness.ctx.issues.get(issue.id, 'company-1'))?.status, 'in_progress');
+    assert.equal(statusMutations.length, 1);
+    assert.equal(transitionComments.length, 1);
+    assert.match(transitionComments[0] ?? '', /from `blocked` to `in progress`/);
+    assert.equal(wakeRequests.length, 1);
+    const recordedHashAfterFirstUnblock = readRegistry()[0]?.unblockedExternalStateHash;
+    assert.match(recordedHashAfterFirstUnblock ?? '', /^[a-f0-9]{64}$/);
+
+    // The assignee deliberately re-establishes the blocked wait.
+    await originalUpdate(issue.id, { status: 'blocked' }, 'company-1');
+    transitionComments.length = 0;
+    statusMutations.length = 0;
+    wakeRequests.length = 0;
+
+    // Pass 2: identical PR evidence, loaded from a fresh registry read. The deliberate
+    // re-block must hold: no re-open, no transition comment, no wake, and the recorded
+    // external state survives the reload.
+    const preservedPass = await harness.performAction('sync.runNow', {}) as { syncState: { status: string } };
+    assert.equal(preservedPass.syncState.status, 'success');
+    assert.equal((await harness.ctx.issues.get(issue.id, 'company-1'))?.status, 'blocked');
+    assert.equal(statusMutations.length, 0);
+    assert.equal(transitionComments.length, 0);
+    assert.equal(wakeRequests.length, 0);
+    assert.equal(readRegistry()[0]?.unblockedExternalStateHash, recordedHashAfterFirstUnblock);
+
+    // The external evidence changes: a new head lands on the pull request.
+    headSha = 'b'.repeat(40);
+
+    // Pass 3: the recorded state no longer matches the live evidence, so normal routing
+    // resumes and the issue is pulled back into active work.
+    const resumedPass = await harness.performAction('sync.runNow', {}) as { syncState: { status: string } };
+    assert.equal(resumedPass.syncState.status, 'success');
+    assert.equal((await harness.ctx.issues.get(issue.id, 'company-1'))?.status, 'in_progress');
+    assert.equal(statusMutations.length, 1);
+    assert.equal(transitionComments.length, 1);
+    assert.equal(wakeRequests.length, 1);
+    const recordedHashAfterResume = readRegistry()[0]?.unblockedExternalStateHash;
+    assert.match(recordedHashAfterResume ?? '', /^[a-f0-9]{64}$/);
+    assert.notEqual(recordedHashAfterResume, recordedHashAfterFirstUnblock);
   } finally {
     globalThis.fetch = originalFetch;
   }
