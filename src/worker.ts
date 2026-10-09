@@ -7033,6 +7033,10 @@ function normalizeImportRegistry(value: unknown): ImportedIssueRecord[] {
         typeof record.remoteActionFingerprint === 'string' && /^[a-f0-9]{64}$/.test(record.remoteActionFingerprint)
           ? record.remoteActionFingerprint
           : undefined;
+      const unblockedExternalStateHash =
+        typeof record.unblockedExternalStateHash === 'string' && /^[a-f0-9]{64}$/.test(record.unblockedExternalStateHash)
+          ? record.unblockedExternalStateHash
+          : undefined;
       const selectedPullRequestGate = normalizeSelectedPullRequestGate(record.selectedPullRequestGate);
       const pendingRemoteActionWake = normalizePendingRemoteActionWake(record.pendingRemoteActionWake);
       const activationPending = record.activationPending === true;
@@ -7054,6 +7058,7 @@ function normalizeImportRegistry(value: unknown): ImportedIssueRecord[] {
         ...(lastSeenGitHubState ? { lastSeenGitHubState } : {}),
         ...(linkedPullRequestCommentCounts.length > 0 ? { linkedPullRequestCommentCounts } : {}),
         ...(remoteActionFingerprint ? { remoteActionFingerprint } : {}),
+        ...(unblockedExternalStateHash ? { unblockedExternalStateHash } : {}),
         ...(selectedPullRequestGate ? { selectedPullRequestGate } : {}),
         ...(pendingRemoteActionWake ? { pendingRemoteActionWake } : {}),
         ...(activationPending ? { activationPending: true } : {})
@@ -7095,6 +7100,10 @@ function normalizeRemoteActionRegistry(value: unknown): RemoteActionRecord[] {
     const fingerprint = typeof record.fingerprint === 'string' && /^[a-f0-9]{64}$/.test(record.fingerprint)
       ? record.fingerprint
       : undefined;
+    const unblockedExternalStateHash =
+      typeof record.unblockedExternalStateHash === 'string' && /^[a-f0-9]{64}$/.test(record.unblockedExternalStateHash)
+        ? record.unblockedExternalStateHash
+        : undefined;
     const pendingWake = normalizePendingRemoteActionWake(record.pendingWake);
     const linkedPullRequestCommentCounts = normalizeGitHubPullRequestCommentCountRecords(
       record.linkedPullRequestCommentCounts
@@ -7105,6 +7114,11 @@ function normalizeRemoteActionRegistry(value: unknown): RemoteActionRecord[] {
       key,
       ...(fingerprint ? { fingerprint } : previous?.fingerprint ? { fingerprint: previous.fingerprint } : {}),
       ...(pendingWake ? { pendingWake } : previous?.pendingWake ? { pendingWake: previous.pendingWake } : {}),
+      ...(unblockedExternalStateHash
+        ? { unblockedExternalStateHash }
+        : previous?.unblockedExternalStateHash
+          ? { unblockedExternalStateHash: previous.unblockedExternalStateHash }
+          : {}),
       ...(linkedPullRequestCommentCounts.length > 0
         ? { linkedPullRequestCommentCounts }
         : previous?.linkedPullRequestCommentCounts
